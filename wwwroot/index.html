@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cliente SOAP ArcaSim</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5fbf'/%3E%3Cpath d='M12 10l-6 6 6 6M20 10l6 6-6 6' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="barra">
+    <div class="barra-interior">
+      <span class="logo" aria-hidden="true">&lt;/&gt;</span>
+      <div>
+        <h1>Cliente SOAP de prueba</h1>
+        <p>Sistema externo que consume el web service WSFEv1 de ArcaSim</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="contenedor">
+    <!-- ===== Conexión ===== -->
+    <section class="tarjeta" aria-labelledby="t-conexion">
+      <div class="tarjeta-titulo">
+        <h2 id="t-conexion">Conexión</h2>
+        <span id="estado-conexion" class="estado" role="status"></span>
+      </div>
+      <form id="form-conexion" class="campos campos-conexion" autocomplete="off">
+        <label class="campo campo-ancho">
+          <span>URL del servicio</span>
+          <input id="url" type="url" list="urls-sugeridas" required spellcheck="false">
+          <datalist id="urls-sugeridas">
+            <option value="http://localhost:5030/wsfev1/service.asmx">API local (dotnet run o Docker)</option>
+            <option value="http://localhost:5080/wsfev1/service.asmx">API local en el puerto 5080</option>
+          </datalist>
+        </label>
+        <label class="campo">
+          <span>CUIT</span>
+          <input id="cuit" inputmode="numeric" maxlength="11" pattern="\d{11}" required>
+        </label>
+        <label class="campo campo-token">
+          <span>API key (Token)</span>
+          <span class="con-boton">
+            <input id="token" type="password" spellcheck="false" placeholder="La que generaste en el portal">
+            <button type="button" id="ver-token" class="boton boton-chico secundario" aria-pressed="false">Mostrar</button>
+          </span>
+        </label>
+      </form>
+      <div class="acciones">
+        <button type="button" id="btn-dummy" class="boton">Probar conexión</button>
+        <button type="button" id="btn-wsdl" class="boton secundario">Leer el WSDL</button>
+      </div>
+      <p class="ayuda">
+        La API key se genera en el portal de ArcaSim, en <em>Mis contribuyentes → Generar / Regenerar API Key</em>,
+        y va en el <code>Token</code> del <code>Auth</code> junto con la CUIT. Esta página la guarda solo mientras
+        la pestaña esté abierta.
+      </p>
+      <div id="wsdl-info" class="wsdl-info" hidden></div>
+    </section>
+
+    <div class="grilla">
+      <!-- ===== Operaciones ===== -->
+      <section class="tarjeta" aria-label="Operaciones">
+        <div class="pestanas" role="tablist" aria-label="Operaciones">
+          <button type="button" role="tab" id="tab-emitir" aria-controls="panel-emitir" aria-selected="true">Emitir</button>
+          <button type="button" role="tab" id="tab-ultimo" aria-controls="panel-ultimo" aria-selected="false" tabindex="-1">Último número</button>
+          <button type="button" role="tab" id="tab-consultar" aria-controls="panel-consultar" aria-selected="false" tabindex="-1">Consultar</button>
+          <button type="button" role="tab" id="tab-catalogos" aria-controls="panel-catalogos" aria-selected="false" tabindex="-1">Catálogos</button>
+          <button type="button" role="tab" id="tab-automatica" aria-controls="panel-automatica" aria-selected="false" tabindex="-1">Prueba automática</button>
+          <button type="button" role="tab" id="tab-libre" aria-controls="panel-libre" aria-selected="false" tabindex="-1">XML libre</button>
+        </div>
+
+        <!-- Emitir (FECAESolicitar) -->
+        <form id="panel-emitir" class="panel" role="tabpanel" aria-labelledby="tab-emitir" novalidate>
+          <p class="panel-intro"><code>FECAESolicitar</code> · autoriza un comprobante y devuelve el CAE.</p>
+
+          <fieldset>
+            <legend>Comprobante</legend>
+            <div class="campos">
+              <label class="campo"><span>Punto de venta</span><input id="e-ptovta" type="number" min="1" value="1" required></label>
+              <label class="campo campo-doble"><span>Tipo</span><select id="e-tipo" data-catalogo="tipos"></select></label>
+              <label class="campo campo-doble"><span>Concepto</span><select id="e-concepto" data-catalogo="conceptos"></select></label>
+              <label class="campo"><span>Fecha</span><input id="e-fecha" type="date" required></label>
+              <label class="campo">
+                <span>Número</span>
+                <span class="con-boton">
+                  <input id="e-numero" type="number" min="1" placeholder="auto">
+                  <button type="button" id="e-proximo" class="boton boton-chico secundario" title="Pide FECompUltimoAutorizado y completa el siguiente">Próximo</button>
+                </span>
+              </label>
+            </div>
+            <label class="casilla"><input id="e-auto" type="checkbox" checked> Pedir el próximo número antes de enviar (último autorizado + 1)</label>
+          </fieldset>
+
+          <fieldset id="e-servicios" hidden>
+            <legend>Fechas del servicio</legend>
+            <div class="campos">
+              <label class="campo"><span>Desde</span><input id="e-serv-desde" type="date"></label>
+              <label class="campo"><span>Hasta</span><input id="e-serv-hasta" type="date"></label>
+              <label class="campo"><span>Vencimiento del pago</span><input id="e-vto-pago" type="date"></label>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Receptor</legend>
+            <div class="campos">
+              <label class="campo campo-doble"><span>Condición frente al IVA</span><select id="e-condicion"></select></label>
+              <label class="campo campo-doble"><span>Documento</span><select id="e-doctipo" data-catalogo="documentos"></select></label>
+              <label class="campo"><span>Número de documento</span><input id="e-docnro" inputmode="numeric" value="0"></label>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Importes</legend>
+            <div class="campos">
+              <label class="campo"><span id="e-neto-etiqueta">Neto gravado</span><input id="e-neto" type="number" min="0" step="0.01" value="100"></label>
+              <label class="campo" id="e-alicuota-campo"><span>Alícuota de IVA</span><select id="e-alicuota" data-catalogo="alicuotas"></select></label>
+              <label class="campo" id="e-noGravado-campo"><span>No gravado</span><input id="e-no-gravado" type="number" min="0" step="0.01" value="0"></label>
+              <label class="campo" id="e-exento-campo"><span>Exento</span><input id="e-exento" type="number" min="0" step="0.01" value="0"></label>
+            </div>
+            <div class="totales">
+              <label class="campo"><span>IVA</span><input id="e-iva" type="number" step="0.01" readonly></label>
+              <label class="campo"><span>Total</span><input id="e-total" type="number" step="0.01" readonly></label>
+              <label class="casilla"><input id="e-manual" type="checkbox"> Cargar IVA y total a mano (para provocar rechazos)</label>
+            </div>
+          </fieldset>
+
+          <div class="acciones">
+            <button type="submit" class="boton">Solicitar CAE</button>
+            <button type="button" id="e-editar" class="boton secundario" title="Lleva el pedido a la pestaña XML libre para modificarlo">Editar el XML</button>
+          </div>
+        </form>
+
+        <!-- Último autorizado -->
+        <form id="panel-ultimo" class="panel" role="tabpanel" aria-labelledby="tab-ultimo" hidden>
+          <p class="panel-intro"><code>FECompUltimoAutorizado</code> · último número autorizado. El próximo es ese + 1.</p>
+          <div class="campos">
+            <label class="campo"><span>Punto de venta</span><input id="u-ptovta" type="number" min="1" value="1" required></label>
+            <label class="campo campo-doble"><span>Tipo</span><select id="u-tipo" data-catalogo="tipos"></select></label>
+          </div>
+          <div class="acciones"><button type="submit" class="boton">Consultar último</button></div>
+        </form>
+
+        <!-- Consultar -->
+        <form id="panel-consultar" class="panel" role="tabpanel" aria-labelledby="tab-consultar" hidden>
+          <p class="panel-intro"><code>FECompConsultar</code> · datos y CAE de un comprobante ya autorizado.</p>
+          <div class="campos">
+            <label class="campo"><span>Punto de venta</span><input id="c-ptovta" type="number" min="1" value="1" required></label>
+            <label class="campo campo-doble"><span>Tipo</span><select id="c-tipo" data-catalogo="tipos"></select></label>
+            <label class="campo"><span>Número</span><input id="c-numero" type="number" min="1" value="1" required></label>
+          </div>
+          <div class="acciones"><button type="submit" class="boton">Consultar comprobante</button></div>
+        </form>
+
+        <!-- Catálogos -->
+        <div id="panel-catalogos" class="panel" role="tabpanel" aria-labelledby="tab-catalogos" hidden>
+          <p class="panel-intro">Operaciones de parámetros. Todas piden el <code>Auth</code>.</p>
+          <div class="lista-catalogos" id="lista-catalogos"></div>
+        </div>
+
+        <!-- Prueba automática -->
+        <div id="panel-automatica" class="panel" role="tabpanel" aria-labelledby="tab-automatica" hidden>
+          <p class="panel-intro">
+            Recorre el servicio de punta a punta y marca qué responde como se espera: WSDL, autenticación (600 y 601),
+            catálogos, numeración, emisión, consulta y rechazos.
+          </p>
+          <div class="campos">
+            <label class="campo"><span>Punto de venta</span><input id="a-ptovta" type="number" min="1" value="1"></label>
+            <label class="campo campo-doble">
+              <span>Comprobante de prueba</span>
+              <select id="a-tipo">
+                <option value="6">Factura B (responsable inscripto)</option>
+                <option value="11">Factura C (monotributista o exento)</option>
+              </select>
+            </label>
+          </div>
+          <label class="casilla"><input id="a-emitir" type="checkbox" checked> Incluir las pruebas que emiten: autorizan <strong>una factura nueva</strong> de $121 a consumidor final</label>
+          <div class="acciones">
+            <button type="button" id="a-correr" class="boton">Ejecutar pruebas</button>
+            <span id="a-resumen" class="resumen-pruebas" role="status"></span>
+          </div>
+          <ol id="a-pasos" class="pasos"></ol>
+        </div>
+
+        <!-- XML libre -->
+        <form id="panel-libre" class="panel" role="tabpanel" aria-labelledby="tab-libre" hidden>
+          <p class="panel-intro">Mandá cualquier sobre SOAP, por ejemplo uno mal formado o con datos inválidos.</p>
+          <div class="campos">
+            <label class="campo campo-doble"><span>Operación</span><select id="l-operacion"></select></label>
+            <label class="campo campo-ancho"><span>SOAPAction</span><input id="l-accion" spellcheck="false"></label>
+          </div>
+          <label class="campo campo-xml">
+            <span>Sobre SOAP</span>
+            <textarea id="l-xml" rows="18" spellcheck="false" wrap="off"></textarea>
+          </label>
+          <div class="acciones">
+            <button type="submit" class="boton">Enviar</button>
+            <button type="button" id="l-plantilla" class="boton secundario">Cargar la plantilla de la operación</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- ===== Resultado ===== -->
+      <section class="tarjeta resultado" aria-labelledby="t-resultado">
+        <div class="tarjeta-titulo">
+          <h2 id="t-resultado">Resultado</h2>
+        </div>
+        <div id="resultado" aria-live="polite">
+          <div class="vacio">
+            <p>Todavía no se envió nada.</p>
+            <p>Completá la conexión y probá con <strong>Probar conexión</strong>.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ===== Historial ===== -->
+    <section class="tarjeta" aria-labelledby="t-historial">
+      <div class="tarjeta-titulo">
+        <h2 id="t-historial">Historial</h2>
+        <button type="button" id="h-limpiar" class="boton boton-chico secundario">Limpiar</button>
+      </div>
+      <p id="h-vacio" class="ayuda">Acá quedan los pedidos de esta sesión. Tocá uno para ver su pedido y su respuesta.</p>
+      <ol id="historial" class="historial"></ol>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
